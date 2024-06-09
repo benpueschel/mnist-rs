@@ -1,9 +1,6 @@
 use std::{fs, io::Result};
 
-use crate::{
-    math::Vector,
-    network::TrainingData,
-};
+use crate::{math::Vector, network::TrainingData};
 
 pub struct Dataset {
     pub image_size: (usize, usize),
@@ -26,7 +23,7 @@ impl From<&Dataset> for Vec<TrainingData> {
             }
 
             let mut target = Vector::new(10);
-            target.set(label.saturating_sub(1), 1.0);
+            target.set(label, 1.0);
 
             result.push(TrainingData { input, target });
         }
@@ -102,5 +99,3 @@ pub fn load_dataset(image_path: &str, label_path: &str) -> Result<Dataset> {
 fn u32_from_bytes(bytes: &[u8]) -> u32 {
     i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as u32
 }
-
-

@@ -8,8 +8,8 @@ impl Vector {
         }
         self
     }
-
 }
+
 
 impl Div<f64> for Vector {
     type Output = Self;
@@ -34,6 +34,52 @@ impl Add<&Vector> for Vector {
     fn add(mut self, other: &Self) -> Self {
         self += other;
         self
+    }
+}
+
+impl Add<f64> for Vector {
+    type Output = Self;
+
+    fn add(mut self, scalar: f64) -> Self {
+        for i in 0..self.0.len() {
+            self.0[i] += scalar;
+        }
+        self
+    }
+}
+
+impl AddAssign<f64> for Vector {
+    fn add_assign(&mut self, scalar: f64) {
+        for i in 0..self.0.len() {
+            self.0[i] += scalar;
+        }
+    }
+}
+
+impl Sub<Vector> for f64 {
+    type Output = Vector;
+
+    fn sub(self, mut vec: Vector) -> Vector {
+        vec *= -1.0;
+        vec += self;
+        vec
+    }
+}
+
+impl Sub<f64> for Vector {
+    type Output = Self;
+
+    fn sub(mut self, scalar: f64) -> Self {
+        self -= scalar;
+        self
+    }
+}
+
+impl SubAssign<f64> for Vector {
+    fn sub_assign(&mut self, scalar: f64) {
+        for i in 0..self.0.len() {
+            self.0[i] -= scalar;
+        }
     }
 }
 
@@ -110,6 +156,22 @@ impl Mul<Vector> for f64 {
     fn mul(self, mut vec: Vector) -> Vector {
         vec *= self;
         vec
+    }
+}
+
+impl Mul<&Vector> for Vector {
+    type Output = Vector;
+
+    fn mul(mut self, other: &Self) -> Vector {
+        assert_eq!(
+            self.0.len(),
+            other.0.len(),
+            "Vector dimensions do not match. ",
+        );
+        for i in 0..self.0.len() {
+            self.0[i] *= other.0[i];
+        }
+        self
     }
 }
 
@@ -316,4 +378,3 @@ impl Mul<&Vector> for &Matrix {
         result
     }
 }
-

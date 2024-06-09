@@ -1,8 +1,24 @@
 use std::{
-    collections::VecDeque, fmt::{self, Debug}, sync::{Arc, Mutex}
+    collections::VecDeque,
+    fmt::{self, Debug},
 };
 
-use crate::math::{self, Matrix, Vector};
+use crate::math::{Matrix, Vector};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayerSpec {
+    pub neurons: usize,
+    pub activation: ActivationFunction,
+}
+
+impl From<(usize, ActivationFunction)> for LayerSpec {
+    fn from((neurons, activation): (usize, ActivationFunction)) -> Self {
+        LayerSpec {
+            neurons,
+            activation,
+        }
+    }
+}
 
 pub struct DeltaCost {
     pub weights: Matrix,
@@ -10,50 +26,99 @@ pub struct DeltaCost {
     last_layer: Vector,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct TrainingData {
     pub input: Vector,
     pub target: Vector,
 }
 
-pub trait ActivationFunction {
-    fn activation(x: f64) -> f64;
-    fn derivative(x: f64) -> f64;
+/// NOTE: Softmax is currently brokenn, your network ain't gonna learn, chief
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivationFunction {
+    Sigmoid,
+    Softmax,
+    ReLU,
 }
 
-pub struct Sigmoid;
-impl ActivationFunction for Sigmoid {
-    fn activation(x: f64) -> f64 {
-        1.0 / (1.0 + (-x).exp())
+impl ActivationFunction {
+    pub fn activation(&self, mut x: Vector) -> Vector {
+        match self {
+            ActivationFunction::Sigmoid => x.map(|x| 1.0 / (1.0 + (-x).exp())),
+            ActivationFunction::ReLU => x.map(|x| x.max(0.0)),
+            ActivationFunction::Softmax => {
+                let d = -x[x.argmax()];
+                for i in 0..x.0.len() {
+                    x[i] = (x[i] + d).exp();
+                }
+                let sum = x.sum_values();
+                x / sum
+            }
+        }
     }
 
-    fn derivative(x: f64) -> f64 {
-        let s = Self::activation(x);
-        s * (1.0 - s)
+    pub fn derivative(&self, x: Vector) -> Vector {
+        match self {
+            ActivationFunction::Sigmoid => {
+                let s = self.activation(x);
+                s.map(|x| x * (1.0 - x))
+            }
+            ActivationFunction::ReLU => x.map(|x| if x > 0.0 { 1.0 } else { 0.0 }),
+            ActivationFunction::Softmax => {
+                let s = self.activation(x);
+                let n = s.0.len();
+                let mut result = Vector::new(n);
+                for i in 0..n {
+                    let mut sum = 0.0;
+                    for j in 0..n {
+                        sum += if i == j {
+                            s[i] * (1.0 - s[i])
+                        } else {
+                            -s[i] * s[j]
+                        };
+                    }
+                    result[i] = sum;
+                }
+                result
+            }
+        }
     }
 }
 
+/// info: Matrix layout: neurons - rows, last_layer - cols
+#[derive(Clone, PartialEq)]
 pub struct Layer {
-    weights: Matrix,
-    biases: Vector,
+    pub weights: Matrix,
+    pub biases: Vector,
+    pub activation: ActivationFunction,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Network {
     pub layers: Vec<Layer>,
+    pub input_size: usize,
 }
 
 impl Layer {
-    pub fn new(weights: Matrix, biases: Vector) -> Layer {
-        Layer { weights, biases }
+    pub fn new(weights: Matrix, biases: Vector, activation: ActivationFunction) -> Layer {
+        Layer {
+            weights,
+            biases,
+            activation,
+        }
     }
 
     /// Create a new layer with random weights and biases.
     /// * `neurons` Number of neurons in this layer.
     /// * `last_layer` Number of neurons in the last layer.
-    pub fn random_with_size(neurons: usize, last_layer: usize) -> Layer {
+    pub fn random_with_size(
+        neurons: usize,
+        last_layer: usize,
+        activation: ActivationFunction,
+    ) -> Layer {
         let weights = Matrix::new(neurons, last_layer).randomize();
         let biases = Vector::new(neurons).randomize();
 
-        Layer::new(weights, biases)
+        Layer::new(weights, biases, activation)
     }
 
     /// Returns the number of neurons in this layer.
@@ -62,7 +127,8 @@ impl Layer {
     }
 
     pub fn forward(&self, input: &Vector) -> Vector {
-        ((&self.weights * input) + &self.biases).map(math::sigmoid)
+        self.activation
+            .activation(&self.weights * input + &self.biases)
     }
 
     pub fn cost(&self, input: &Vector, target: &Vector) -> Vector {
@@ -88,34 +154,34 @@ impl Layer {
         result
     }
 
-    pub fn back_propagate(&self, input: &Vector, target: &Vector) -> DeltaCost {
-        let cost1 = self.cost1(input, target);
-        let values = self.forward(input);
+    pub fn back_propagate(&self, input: &Vector, cost1: &Vector) -> DeltaCost {
+        let output = self.forward(input);
+        // note: dC/dA = cost1 -> C' for the last layer,
+        // sum(dZ/dX * dA/dZ * dC/dA) for the rest.
+
+        let d_z = self.activation.derivative(output.clone()) * cost1;
+
+        // compute cost function's derivative with respect to each bias.
+        // dC/dB = dZ/dB * dA/dZ * dC/dA
+        // dZ/dB = 1, less work for us :)
+        let biases = d_z.clone();
 
         // compute cost function's derivative with respect to each weight.
         let mut weights = self.weights.clone();
-        for col in 0..weights.cols() {
-            for row in 0..weights.rows() {
-                // dC/dW = dC/dA * dA/dZ * dZ/dW
-                let value = input.0[col] * math::sigmoid1(values.0[row]) * cost1.0[row];
-                weights.set(col, row, value);
-            }
-        }
 
-        // compute cost function's derivative with respect to each bias.
-        let mut biases = self.biases.clone();
-        for i in 0..biases.0.len() {
-            // dC/dB = dC/dA * dA/dZ * dZ/dB
-            // dZ/dB = 1, less work for us :)
-            biases.0[i] = math::sigmoid1(values.0[i]) * cost1.0[i];
+        // col represents the input neuron, row represents the output neuron.
+        for col in 0..weights.cols() {
+            // dC/dW = dZ/dW * dA/dZ * dC/dA
+            let value = input[col] * d_z.clone();
+            weights[col] = value;
         }
 
         // compute cost function's derivative with respect to each input.
+        // dC/dX = sum(dZ/dX * dA/dZ * dC/dA)
         let mut last_layer = Vector::new(input.0.len());
         for i in 0..last_layer.0.len() {
-            // dC/dX = sum(dZ/dX * dA/dZ * dC/dA)
-            for j in 0..weights.rows() {
-                last_layer.0[i] += weights.at(i, j) * math::sigmoid1(values.0[j]) * cost1.0[j];
+            for j in 0..self.biases.0.len() {
+                last_layer[i] += self.weights[i][j] * d_z[j];
             }
         }
 
@@ -146,18 +212,33 @@ impl Network {
     /// let network = Network::new(vec![2, 3, 1]);
     /// ```
     ///
-    pub fn new(layer_sizes: Vec<usize>) -> Network {
+    pub fn new(layer_spec: Vec<LayerSpec>) -> Network {
         // Go through all layers in the layer_sizes vector and connect them.
         // The first layer in layer_sizes is the input layer, so we skip it.
         let mut layers = Vec::new();
-        for i in 1..layer_sizes.len() {
-            println!("Creating layer {} with {} neurons", i, layer_sizes[i]);
-            layers.push(Layer::random_with_size(layer_sizes[i], layer_sizes[i - 1]));
+        for i in 1..layer_spec.len() {
+            let layer = layer_spec[i];
+            let last_layer = layer_spec[i - 1];
+            layers.push(Layer::random_with_size(
+                layer.neurons,
+                last_layer.neurons,
+                layer.activation,
+            ));
         }
 
-        println!("{:?}", layers);
+        Network {
+            layers,
+            input_size: layer_spec.first().unwrap().neurons,
+        }
+    }
 
-        Network { layers }
+    pub fn print_layout(&self) {
+        print!("Network layout: ");
+        print!("{}", self.layers[0].weights.cols());
+        for layer in &self.layers {
+            print!(" -> {}", layer.size());
+        }
+        println!();
     }
 
     pub fn feed_forward(&self, input: Vector) -> Vector {
@@ -168,7 +249,7 @@ impl Network {
         result
     }
 
-    pub fn back_propagate(&self, mut input: Vector, mut target: Vector) -> Vec<DeltaCost> {
+    pub fn back_propagate(&self, mut input: Vector, target: Vector) -> Vec<DeltaCost> {
         let mut result = VecDeque::new();
         let mut layer_inputs = Vec::new();
         for layer in &self.layers {
@@ -176,10 +257,16 @@ impl Network {
             input = layer.forward(&input);
         }
 
+        let mut cost1: Option<Vector> = None;
         for (i, layer) in self.layers.iter().enumerate().rev() {
             let input = &layer_inputs[i];
-            let delta_cost = layer.back_propagate(input, &target);
-            target = delta_cost.last_layer.clone();
+
+            if cost1.is_none() {
+                cost1 = Some(layer.cost1(input, &target));
+            }
+
+            let delta_cost = layer.back_propagate(input, &cost1.unwrap());
+            cost1 = Some(delta_cost.last_layer.clone());
             result.push_front(delta_cost);
         }
 
@@ -192,21 +279,19 @@ impl Network {
         learning_rate: f64,
         thread_count: usize,
     ) {
+        //TODO: does this work when data.len() % thread_count != 0?
         let block_size = data.len() / thread_count;
 
         let mut deltas = Vec::new();
-        let i = Arc::new(Mutex::new(0));
         std::thread::scope(|s| {
             let mut threads = Vec::with_capacity(thread_count);
-            for _ in 0..thread_count {
-                //TODO: does this work when data.len() % thread_count != 0?
-                threads.push(s.spawn(|| {
-                    let mut i = i.lock().unwrap();
-                    let start = *i * block_size;
+            for i in 0..thread_count {
+                let this = &self;
+
+                threads.push(s.spawn(move || {
+                    let start = i * block_size;
                     let end = start + block_size;
-                    println!("Thread {} processing data[{}..{}]", *i, start, end);
-                    *i += 1;
-                    self.calc_deltas(&data[start..end], learning_rate)
+                    this.calc_deltas(&data[start..end], learning_rate)
                 }));
             }
 
@@ -215,9 +300,9 @@ impl Network {
             }
         });
 
-        for (layer, delta) in self.layers.iter_mut().zip(&deltas) {
-            layer.weights -= &delta.weights;
-            layer.biases -= &delta.biases;
+        for (layer, delta) in self.layers.iter_mut().zip(deltas) {
+            layer.weights -= delta.weights / thread_count as f64;
+            layer.biases -= delta.biases / thread_count as f64;
         }
     }
 

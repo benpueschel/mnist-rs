@@ -1,18 +1,17 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::{Index, IndexMut}};
 
-mod algebra;
+pub mod algebra;
 
-pub fn sigmoid(x: f64) -> f64 {
-    1.0 / (1.0 + (-x).exp())
+pub fn softmax(mut x: Vector) -> Vector {
+    let d = -x[x.argmax()];
+    for i in 0..x.0.len() {
+        x[i] = (x[i] + d).exp();
+    }
+    let sum = x.sum_values();
+    x / sum
 }
 
-/// Derivative of the sigmoid function.
-pub fn sigmoid1(x: f64) -> f64 {
-    let s = sigmoid(x);
-    s * (1.0 - s)
-}
-
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Matrix {
     _rows: usize,
     _cols: usize,
@@ -35,6 +34,10 @@ impl Vector {
     pub fn set(&mut self, index: usize, value: f64) {
         self.0[index] = value;
     }
+    pub fn sum_values(&self) -> f64 {
+        self.0.iter().sum()
+    }
+
     pub fn randomize(&self) -> Self {
         let mut result = self.clone();
         result.randomize_mut();
@@ -42,7 +45,7 @@ impl Vector {
     }
     pub fn randomize_mut(&mut self) -> &mut Self {
         for i in 0..self.0.len() {
-            self.0[i] = rand::random::<f64>();
+            self.0[i] = rand::random::<f64>() - 0.5;
         }
         self
     }
@@ -56,6 +59,10 @@ impl Vector {
         }
         max
     }
+
+    pub fn at(&self, index: usize) -> f64 {
+        self.0[index]
+    }
 }
 
 impl Iterator for Vector {
@@ -63,6 +70,16 @@ impl Iterator for Vector {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.pop()
+    }
+
+    fn max(self) -> Option<Self::Item> {
+        self.0.into_iter().max_by(|a, b| a.partial_cmp(b).unwrap())
+    }
+    fn sum<S>(self) -> S
+        where
+            Self: Sized,
+            S: std::iter::Sum<Self::Item>, {
+        self.0.into_iter().sum()
     }
 }
 
@@ -92,6 +109,10 @@ impl Matrix {
     pub fn at(&self, col: usize, row: usize) -> f64 {
         self._data[col].0[row]
     }
+    pub fn vector_at(&self, col: usize) -> &Vector {
+        &self._data[col]
+    }
+
     pub fn set(&mut self, col: usize, row: usize, data: f64) {
         self._data[col].0[row] = data;
     }
@@ -103,9 +124,37 @@ impl Matrix {
     pub fn randomize_mut(&mut self) -> &mut Self {
         for col in 0..self._cols {
             for row in 0..self._rows {
-                self.set(col, row, rand::random::<f64>());
+                self.set(col, row, rand::random::<f64>() - 0.5);
             }
         }
         self
+    }
+}
+
+impl Index<usize> for Matrix {
+    type Output = Vector;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self._data[index]
+    }
+}
+
+impl IndexMut<usize> for Matrix {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self._data[index]
+    }
+}
+
+impl Index<usize> for Vector {
+    type Output = f64;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IndexMut<usize> for Vector {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 }
