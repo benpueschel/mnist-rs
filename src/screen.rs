@@ -83,14 +83,3 @@ fn print_image(data: &Vector, size: (usize, usize)) {
         println!();
     }
 }
-
-fn peek_error(output: &Vector, data: &TrainingData) {
-    let predicted = output.argmax();
-    let actual = data.target.argmax();
-    let confidence = math::softmax(output.clone())[predicted];
-
-    print_image(&data.input, (28, 28));
-    println!("digit: {}, prediction: {}", actual, predicted);
-    println!("confidence: {:.5?}", confidence);
-    println!("output: {:.5?}", output.0);
-}

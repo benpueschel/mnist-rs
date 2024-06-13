@@ -131,29 +131,6 @@ impl Layer {
             .activation(&self.weights * input + &self.biases)
     }
 
-    pub fn cost(&self, input: &Vector, target: &Vector) -> Vector {
-        assert_eq!(target.0.len(), self.biases.0.len());
-
-        let mut result = self.forward(input);
-
-        for (i, t) in target.0.iter().enumerate() {
-            let diff = result.0[i] - t;
-            result.0[i] = diff * diff;
-        }
-        result
-    }
-
-    pub fn cost1(&self, input: &Vector, target: &Vector) -> Vector {
-        assert_eq!(target.0.len(), self.biases.0.len());
-
-        let mut result = self.forward(input);
-
-        for (i, t) in target.0.iter().enumerate() {
-            result.0[i] = 2.0 * (result.0[i] - t);
-        }
-        result
-    }
-
     pub fn back_propagate(&self, input: &Vector, cost1: &Vector) -> DeltaCost {
         let output = self.forward(input);
         // note: dC/dA = cost1 -> C' for the last layer,
@@ -257,16 +234,12 @@ impl Network {
             input = layer.forward(&input);
         }
 
-        let mut cost1: Option<Vector> = None;
+        let mut cost1: Vector = self.cost1(input, &target);
         for (i, layer) in self.layers.iter().enumerate().rev() {
             let input = &layer_inputs[i];
 
-            if cost1.is_none() {
-                cost1 = Some(layer.cost1(input, &target));
-            }
-
-            let delta_cost = layer.back_propagate(input, &cost1.unwrap());
-            cost1 = Some(delta_cost.last_layer.clone());
+            let delta_cost = layer.back_propagate(input, &cost1);
+            cost1 = delta_cost.last_layer.clone();
             result.push_front(delta_cost);
         }
 
@@ -309,8 +282,8 @@ impl Network {
     }
 
     pub fn train(&mut self, data: &[TrainingData], learning_rate: f64) {
-        let mut deltas = self.calc_deltas(data, learning_rate);
-        for (layer, delta) in self.layers.iter_mut().zip(&mut deltas) {
+        let deltas = self.calc_deltas(data, learning_rate);
+        for (layer, delta) in self.layers.iter_mut().zip(deltas) {
             layer.weights -= &delta.weights;
             layer.biases -= &delta.biases;
         }
@@ -360,8 +333,18 @@ impl Network {
     pub fn cost(&self, output: &Vector, expected: &Vector) -> f64 {
         let mut result = 0.0;
         for (o, e) in output.0.iter().zip(expected.0.iter()) {
-            result += (o - e) * (o - e);
+            result += (o - e) * (o - e) / output.0.len() as f64;
         }
         result
     }
+
+    pub fn cost1(&self, mut output: Vector, target: &Vector) -> Vector {
+        assert_eq!(target.0.len(), output.0.len());
+
+        for (i, t) in target.0.iter().enumerate() {
+            output.0[i] = 2.0 * (output.0[i] - t) / output.0.len() as f64;
+        }
+        output
+    }
+
 }
