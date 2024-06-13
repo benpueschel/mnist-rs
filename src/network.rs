@@ -282,7 +282,7 @@ impl Network {
         //TODO: does this work when data.len() % thread_count != 0?
         let block_size = data.len() / thread_count;
 
-        let mut deltas = Vec::new();
+        let mut thread_deltas = Vec::new();
         std::thread::scope(|s| {
             let mut threads = Vec::with_capacity(thread_count);
             for i in 0..thread_count {
@@ -296,13 +296,15 @@ impl Network {
             }
 
             for thread in threads {
-                deltas.extend(thread.join().unwrap());
+                thread_deltas.push(thread.join().unwrap());
             }
         });
 
-        for (layer, delta) in self.layers.iter_mut().zip(deltas) {
-            layer.weights -= delta.weights / thread_count as f64;
-            layer.biases -= delta.biases / thread_count as f64;
+        for deltas in thread_deltas {
+            for (layer, delta) in self.layers.iter_mut().zip(deltas) {
+                layer.weights -= delta.weights / thread_count as f64;
+                layer.biases -= delta.biases / thread_count as f64;
+            }
         }
     }
 
