@@ -1,0 +1,14 @@
+[package]
+name = "neural-network"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+colored = "2.1.0"
+ctrlc = "3.4.4"
+rand = "0.8.5"
+math = { path = "../math" }
+serialization = { path = "../serialization" }
+serialize-macro = { path = "../serialize-macro" }

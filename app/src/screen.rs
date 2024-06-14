@@ -2,10 +2,8 @@ use std::time::Duration;
 
 use colored::Colorize;
 
-use crate::{
-    math::{self, Vector},
-    network::TrainingData,
-};
+use neural_network::TrainingData;
+use math::Vector;
 
 pub fn clear_screen() {
     print!("{esc}[2J{esc}[1;1H", esc = 27 as char);

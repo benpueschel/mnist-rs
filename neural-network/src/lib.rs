@@ -1,14 +1,19 @@
+pub mod downcast;
+pub mod layer;
+
+pub mod mnist;
+
 use std::{
     collections::VecDeque,
-    fmt::{self, Debug},
+    fmt::{self, Debug}, io::Result,
 };
 
-use crate::{downcast::DynEq, math::Vector};
+use crate::downcast::DynEq;
+use math::Vector;
+use serialization::Serialized;
 
 use self::layer::{Gradient, Layer};
 
-pub mod layer;
-pub mod serializer;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrainingData {
@@ -17,10 +22,10 @@ pub struct TrainingData {
 }
 
 #[macro_export]
-macro_rules! network {
+macro_rules! create_network {
     ($($x:expr),+ $(,)?) => {
         {
-            use crate::network::layer::Layer;
+            use $crate::layer::Layer;
             let layers: Vec<Box<dyn Layer>> = vec![
                 $(Box::new($x),)+
             ];
@@ -59,18 +64,9 @@ impl PartialEq for Network {
 }
 
 impl Network {
-    /// Create a new network with random weights and biases.
-    /// `layer_sizes` represents the number of neurons in each layer.
-    ///
-    /// # Example
-    ///
-    /// - Create a new network with 2 input neurons, 3 hidden neurons and 1 output neuron.
-    ///
-    /// ```
-    /// use neural_network::Network;
-    /// let network = Network::new(vec![2, 3, 1]);
-    /// ```
-    ///
+    /// Create a new network with the given layers.
+    /// NOTE: You probably shouldn't use this directly. 
+    /// Use the [`create_network!`] macro instead.
     pub fn new(layers: Vec<Box<dyn Layer>>) -> Network {
         Network { layers }
     }
@@ -182,23 +178,6 @@ impl Network {
     /// Evaluate the cost of one output compared to the expected output.
     /// The average cost function results across a dataset can be used to evaluate the network's
     /// performance. The cost function is defined as: C = (output - expected)^2.
-    ///
-    /// # Example
-    ///
-    /// - Simulate a network output of 0.5 and compare it to the expected output of 0.0.
-    ///   The cost function is (0.5 - 0.0)^2 = 0.25.
-    ///
-    /// ```
-    /// use neural_network::{Network, Vector};
-    /// let network = Network::new(vec![2, 3, 1]);
-    ///
-    /// let simulated_output = vec![0.5].into();
-    /// let expected_output = vec![0.0].into();
-    ///
-    /// let cost = network.cost(simulated_output, expected_output);
-    /// assert_eq!(cost, 0.25);
-    /// ```
-    ///
     pub fn cost(&self, output: &Vector, expected: &Vector) -> f64 {
         let mut result = 0.0;
         for (o, e) in output.0.iter().zip(expected.0.iter()) {
@@ -214,5 +193,123 @@ impl Network {
             output.0[i] = 2.0 * (output.0[i] - t) / output.0.len() as f64;
         }
         output
+    }
+}
+
+
+pub fn serialize_network(network: &Network, path: &str) -> Result<()> {
+    std::fs::write(path, network.serialize_binary())
+}
+
+pub fn deserialize_network(path: &str) -> Result<Network> {
+    let data = std::fs::read(path)?;
+    Ok(Network::deserialize_binary(&data).0)
+}
+
+macro_rules! deserialize_layers {
+    { $tag:expr, $data:expr,$($layer:ty),+ } => {
+        match $tag {
+            $(
+                stringify!($layer) => {
+                    let (layer, len) = <$layer>::deserialize_binary($data);
+                    (Box::new(layer) as Box<dyn Layer>, len)
+                },
+            )+
+            x => panic!("Invalid layer tag {}", x),
+        }
+    };
+}
+
+impl Serialized for Network {
+    fn serialize_binary(&self) -> Vec<u8> {
+        let mut data = vec![];
+        data.extend((self.layers.len() as u64).to_be_bytes());
+
+        for layer in &self.layers {
+            let tag = layer.name().as_bytes().to_vec();
+            data.extend((tag.len() as u64).to_be_bytes());
+            data.extend(tag);
+            data.extend(layer.serialize_binary());
+        }
+
+        data
+    }
+
+    fn deserialize_binary(data: &[u8]) -> (Self, usize) {
+        let num_layers = serialization::u64_from_bytes(&data[0..]) as usize;
+        let mut offset = 8;
+        let mut layers: Vec<Box<dyn Layer>> = Vec::with_capacity(num_layers);
+        for _ in 0..num_layers {
+            let tag = deserialize_tag(&data[offset..]);
+            offset += tag.len() + 8;
+            use layer::{Activation, Dense};
+            // TODO: move to proc macro which should deal with this for us (hopefully)
+            let (layer, len) = deserialize_layers! {
+                tag.as_str(), &data[offset..], Activation, Dense
+            };
+            layers.push(layer);
+            offset += len;
+        }
+        (Network { layers }, offset)
+    }
+    fn tag() -> &'static str {
+        "Network"
+    }
+}
+
+pub fn deserialize_tag(data: &[u8]) -> String {
+    let len = serialization::u64_from_bytes(&data[0..]) as usize;
+    String::from_utf8(data[8..8 + len].to_vec()).unwrap()
+}
+
+#[cfg(test)]
+mod test {
+    use super::layer::{Activation, Dense};
+    use super::*;
+
+    #[test]
+    pub fn test_dense() {
+        let dense = Dense::new(12, 37);
+        let serialized = dense.serialize_binary();
+        println!("{}", serialized.len());
+        let (deserialized, _) = Dense::deserialize_binary(&serialized);
+        assert_eq!(dense, deserialized);
+    }
+
+    #[test]
+    pub fn test_activation() {
+        let activation = Activation::ReLU;
+        let serialized = activation.serialize_binary();
+        let (deserialized, _) = Activation::deserialize_binary(&serialized);
+        assert_eq!(activation, deserialized);
+    }
+
+    #[test]
+    pub fn test_network() {
+        let network = create_network![
+            Dense::new(12, 37),
+            Activation::ReLU,
+            Dense::new(37, 20),
+            Activation::Sigmoid,
+        ];
+        let serialized = network.serialize_binary();
+        let (deserialized, _) = Network::deserialize_binary(&serialized);
+        assert_eq!(network, deserialized);
+    }
+
+    #[test]
+    pub fn test_serialization() {
+        let network = create_network![
+            Dense::new(12, 37),
+            Activation::ReLU,
+            Dense::new(37, 20),
+            Activation::Sigmoid,
+        ];
+        static PATH: &str = "test";
+
+        serialize_network(&network, PATH).expect("Failed to serialize network");
+        let deserialized = deserialize_network(PATH).expect("Failed to deserialize network");
+        std::fs::remove_file(PATH).expect("Failed to remove test file");
+        assert_eq!(network, deserialized);
     }
 }

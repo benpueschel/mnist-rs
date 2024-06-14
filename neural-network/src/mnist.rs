@@ -1,6 +1,9 @@
 use std::{fs, io::Result};
 
-use crate::{math::Vector, network::TrainingData};
+use crate::TrainingData;
+use math::Vector;
+
+pub use math;
 
 pub struct Dataset {
     pub image_size: (usize, usize),

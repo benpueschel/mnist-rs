@@ -1,9 +1,9 @@
-[package]
-name = "neural-network"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-[dependencies]
-colored = "2.1.0"
-ctrlc = "3.4.4"
-rand = "0.8.5"
+members = [
+	"app", 
+	"neural-network",
+	"serialize-macro", 
+	"math", 
+	"serialization",
+]

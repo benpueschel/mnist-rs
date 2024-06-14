@@ -1,6 +1,7 @@
-use crate::math::{Matrix, Vector};
+use math::{Matrix, Vector};
+use serialization::Serialized;
+use serialize_macro::Serialize;
 use crate::downcast::DynEq;
-use super::serializer::Serialized;
 
 #[derive(Default)]
 pub struct Gradient {
@@ -37,10 +38,37 @@ pub enum Activation {
     Tanh,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Dense {
     pub weights: Matrix,
     pub biases: Vector,
+}
+
+impl Serialized for Activation {
+    fn serialize_binary(&self) -> Vec<u8> {
+        match self {
+            Activation::Sigmoid => 0_u64,
+            Activation::ReLU => 1_u64,
+            Activation::Tanh => 2_u64,
+        }
+        .to_be_bytes()
+        .to_vec()
+    }
+
+    fn deserialize_binary(data: &[u8]) -> (Self, usize) {
+        (
+            match serialization::u64_from_bytes(&data[0..]) {
+                0 => Activation::Sigmoid,
+                1 => Activation::ReLU,
+                2 => Activation::Tanh,
+                x => panic!("Invalid activation function {}", x),
+            },
+            8,
+        )
+    }
+    fn tag() -> &'static str {
+        "Activation"
+    }
 }
 
 impl LayerName for Activation {

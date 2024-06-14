@@ -3,17 +3,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use math::Vector;
-use network::{Network, TrainingData};
-
-use crate::{network::{layer::Dense, serializer::{self}}, screen::ScreenInfo};
-
-pub mod downcast;
-pub mod math;
-pub mod network;
 pub mod screen;
 
-pub mod mnist;
+use neural_network::{
+    mnist,
+    create_network,
+    {self, Network, layer::Dense, TrainingData},
+};
+
+use math::{self, Vector};
+
+use crate::screen::ScreenInfo;
 
 static BATCHES: usize = 60;
 static THREAD_COUNT: usize = 10;
@@ -91,7 +91,7 @@ pub fn check_exit(exit: &Arc<Mutex<bool>>, network: &Network) -> bool {
     let exit = *exit.lock().unwrap();
     if exit {
         // screen::move_cursor();
-        serializer::serialize_network(network, NETWORK_PATH).unwrap();
+        neural_network::serialize_network(network, NETWORK_PATH).unwrap();
         println!("Network saved to network.ben");
         println!("Exiting...");
     }
@@ -99,7 +99,7 @@ pub fn check_exit(exit: &Arc<Mutex<bool>>, network: &Network) -> bool {
 }
 
 pub fn load_network(image_size: usize) -> Network {
-    use network::layer::Activation::*;
+    use neural_network::layer::Activation::*;
     let network;
 
     loop {
@@ -111,11 +111,11 @@ pub fn load_network(image_size: usize) -> Network {
         let input = input.trim().to_lowercase();
 
         if input == "n" {
-            network = serializer::deserialize_network(NETWORK_PATH).unwrap();
+            network = neural_network::deserialize_network(NETWORK_PATH).unwrap();
             println!("Loaded network from network.ben");
             break;
         } else if input == "y" {
-            network = network![
+            network = create_network![
                 Dense::new(image_size, 20),
                 ReLU,
                 Dense::new(20, 20),
@@ -139,7 +139,7 @@ pub struct TestResult {
     pub error_least_confident_data: Option<TrainingData>,
 }
 
-pub fn test_network(network: &Network, dataset: &Vec<TrainingData>, peek: bool) -> TestResult {
+pub fn test_network(network: &Network, dataset: &[TrainingData], peek: bool) -> TestResult {
     let mut avg_cost = 0.0;
     let mut accuracy = 0.0;
     let mut confidence = 0.0;
