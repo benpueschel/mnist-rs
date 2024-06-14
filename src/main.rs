@@ -6,19 +6,18 @@ use std::{
 use math::Vector;
 use network::{Network, TrainingData};
 
-use crate::screen::ScreenInfo;
+use crate::{network::{layer::Dense, serializer::{self}}, screen::ScreenInfo};
 
+pub mod downcast;
 pub mod math;
 pub mod network;
 pub mod screen;
-pub mod serializer;
 
 pub mod mnist;
 
-static PEEK_COUNT: usize = 5;
-static BATCHES: usize = 20;
+static BATCHES: usize = 60;
 static THREAD_COUNT: usize = 10;
-static LEARNING_RATE: f64 = 0.01;
+static LEARNING_RATE: f64 = 0.1;
 static NETWORK_PATH: &str = "network.ben";
 
 fn main() {
@@ -56,6 +55,9 @@ fn main() {
         screen_info.batch = 0;
         screen_info.status = "Testing...";
         screen::display_info(&screen_info);
+        if check_exit(&exit, &network) {
+            return;
+        }
 
         let stats = test_network(&network, &test_data, true);
         screen_info.test_accuracy = stats.accuracy;
@@ -78,24 +80,26 @@ fn main() {
             // network.train(&training_data[start..end], LEARNING_RATE);
 
             screen::display_info(&screen_info);
-
-            if *exit.lock().unwrap() {
-                // screen::move_cursor();
-
-                serializer::serialize(&network, NETWORK_PATH).unwrap();
-
-                assert_eq!(serializer::deserialize(NETWORK_PATH).unwrap(), network);
-
-                println!("Network saved to network.ben");
-                println!("Exiting...");
+            if check_exit(&exit, &network) {
                 return;
             }
         }
     }
 }
 
+pub fn check_exit(exit: &Arc<Mutex<bool>>, network: &Network) -> bool {
+    let exit = *exit.lock().unwrap();
+    if exit {
+        // screen::move_cursor();
+        serializer::serialize_network(network, NETWORK_PATH).unwrap();
+        println!("Network saved to network.ben");
+        println!("Exiting...");
+    }
+    exit
+}
+
 pub fn load_network(image_size: usize) -> Network {
-    use network::ActivationFunction::*;
+    use network::layer::Activation::*;
     let network;
 
     loop {
@@ -107,20 +111,18 @@ pub fn load_network(image_size: usize) -> Network {
         let input = input.trim().to_lowercase();
 
         if input == "n" {
-            network = serializer::deserialize(NETWORK_PATH).unwrap();
+            network = serializer::deserialize_network(NETWORK_PATH).unwrap();
             println!("Loaded network from network.ben");
             break;
         } else if input == "y" {
-            let network_layout = vec![
-                (image_size, ReLU).into(),
-                // (80, ReLU).into(),
-                // (20, Sigmoid).into(),
-                // (20, Sigmoid).into(),
-                (20, ReLU).into(),
-                (20, ReLU).into(),
-                (10, Sigmoid).into(),
+            network = network![
+                Dense::new(image_size, 20),
+                ReLU,
+                Dense::new(20, 20),
+                ReLU,
+                Dense::new(20, 10),
+                Sigmoid
             ];
-            network = network::Network::new(network_layout.clone());
             println!("Created new network.");
             break;
         }
@@ -144,7 +146,6 @@ pub fn test_network(network: &Network, dataset: &Vec<TrainingData>, peek: bool) 
     let mut error_least_confident = None;
     let mut error_least_confident_data = None;
 
-    let mut peek_count = 0;
     for data in dataset.iter() {
         let output = network.feed_forward(data.input.clone());
         let predicted = output.argmax();
@@ -153,7 +154,7 @@ pub fn test_network(network: &Network, dataset: &Vec<TrainingData>, peek: bool) 
 
         if predicted == data.target.argmax() {
             accuracy += 1.0 / dataset.len() as f64;
-        } else if peek && peek_count < PEEK_COUNT {
+        } else if peek {
             match error_least_confident {
                 Some((_, confidence)) if confidence < current_confidence => (),
                 _ => {
@@ -161,7 +162,6 @@ pub fn test_network(network: &Network, dataset: &Vec<TrainingData>, peek: bool) 
                     error_least_confident_data = Some(data.clone());
                 }
             }
-            peek_count += 1;
         }
 
         avg_cost += current_cost / dataset.len() as f64;

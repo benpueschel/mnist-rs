@@ -11,14 +11,14 @@ pub fn softmax(mut x: Vector) -> Vector {
     x / sum
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Matrix {
     _rows: usize,
     _cols: usize,
     _data: Vec<Vector>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Vector(pub Vec<f64>);
 
 impl From<Vec<f64>> for Vector {
@@ -128,6 +128,16 @@ impl Matrix {
             }
         }
         self
+    }
+
+    pub fn transpose(&self) -> Matrix {
+        let mut result = Matrix::new(self._cols, self._rows);
+        for col in 0..self._cols {
+            for row in 0..self._rows {
+                result.set(row, col, self.at(col, row));
+            }
+        }
+        result
     }
 }
 
