@@ -1,5 +1,7 @@
 use math::{Matrix, Vector};
 
+pub mod literals;
+
 pub trait Serialized {
     fn serialize_binary(&self) -> Vec<u8>;
     fn deserialize_binary(data: &[u8]) -> (Self, usize)
@@ -10,14 +12,22 @@ pub trait Serialized {
         Self: Sized;
 }
 
-pub fn f64_from_bytes(bytes: &[u8]) -> f64 {
-    let b = bytes;
-    f64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+#[macro_export]
+macro_rules! test_serialization {
+    ($x: expr, $y: ident) => {
+        let x = $x;
+        let serialized = x.serialize_binary();
+        assert_eq!(x, $y::deserialize_binary(&serialized).0);
+    };
 }
-
-pub fn u64_from_bytes(bytes: &[u8]) -> u64 {
-    let b: &[u8] = bytes;
-    u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+#[macro_export]
+macro_rules! test_random_value {
+    ($fn_name: ident, $x: ident) => {
+        #[test]
+        fn $fn_name() {
+            $crate::test_serialization!(rand::random::<$x>(), $x);
+        }
+    };
 }
 
 impl Serialized for Vector {
@@ -32,11 +42,11 @@ impl Serialized for Vector {
     }
 
     fn deserialize_binary(data: &[u8]) -> (Self, usize) {
-        let len = u64_from_bytes(&data[0..]) as usize;
+        let len = u64::deserialize_binary(&data[0..]).0 as usize;
         let mut result = Vector::new(len);
         let mut offset = 8;
         for i in 0..len {
-            result.set(i, f64_from_bytes(&data[offset..]));
+            result.set(i, f64::deserialize_binary(&data[offset..]).0);
             offset += 8;
         }
         (result, offset)
@@ -60,13 +70,13 @@ impl Serialized for Matrix {
     }
 
     fn deserialize_binary(data: &[u8]) -> (Self, usize) {
-        let rows = u64_from_bytes(&data[0..]) as usize;
-        let cols = u64_from_bytes(&data[8..]) as usize;
+        let rows = u64::deserialize_binary(&data[0..]).0 as usize;
+        let cols = u64::deserialize_binary(&data[8..]).0 as usize;
         let mut offset = 16;
         let mut result = Matrix::new(rows, cols);
         for i in 0..cols {
             for j in 0..rows {
-                result.set(i, j, f64_from_bytes(&data[offset..]));
+                result.set(i, j, f64::deserialize_binary(&data[offset..]).0);
                 offset += 8;
             }
         }
@@ -82,14 +92,18 @@ mod test {
     use super::*;
 
     #[test]
-    pub fn test_deserialize_u64() {
-        let num = rand::random::<u64>();
-        assert_eq!(num, u64_from_bytes(&num.to_be_bytes()));
+    pub fn test_deserialize_vector() {
+        let len = rand::random::<u8>() as usize;
+        let v = Vector::new(len);
+        test_serialization!(v, Vector);
     }
 
     #[test]
-    pub fn test_deserialize_f64() {
-        let num = rand::random::<f64>();
-        assert_eq!(num, f64_from_bytes(&num.to_be_bytes()));
+    pub fn test_deserialize_matrix() {
+        let rows = rand::random::<u8>() as usize;
+        let cols = rand::random::<u8>() as usize;
+        let v = Matrix::new(rows, cols);
+        test_serialization!(v, Matrix);
     }
+    
 }

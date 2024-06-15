@@ -236,7 +236,7 @@ impl Serialized for Network {
     }
 
     fn deserialize_binary(data: &[u8]) -> (Self, usize) {
-        let num_layers = serialization::u64_from_bytes(&data[0..]) as usize;
+        let num_layers = u64::deserialize_binary(&data[0..]).0 as usize;
         let mut offset = 8;
         let mut layers: Vec<Box<dyn Layer>> = Vec::with_capacity(num_layers);
         for _ in 0..num_layers {
@@ -258,7 +258,7 @@ impl Serialized for Network {
 }
 
 pub fn deserialize_tag(data: &[u8]) -> String {
-    let len = serialization::u64_from_bytes(&data[0..]) as usize;
+    let len = u64::deserialize_binary(&data[0..]).0 as usize;
     String::from_utf8(data[8..8 + len].to_vec()).unwrap()
 }
 
@@ -266,22 +266,18 @@ pub fn deserialize_tag(data: &[u8]) -> String {
 mod test {
     use super::layer::{Activation, Dense};
     use super::*;
+    use serialization::test_serialization;
 
     #[test]
     pub fn test_dense() {
-        let dense = Dense::new(12, 37);
-        let serialized = dense.serialize_binary();
-        println!("{}", serialized.len());
-        let (deserialized, _) = Dense::deserialize_binary(&serialized);
-        assert_eq!(dense, deserialized);
+        test_serialization!(Dense::new(12, 37), Dense);
     }
 
     #[test]
     pub fn test_activation() {
-        let activation = Activation::ReLU;
-        let serialized = activation.serialize_binary();
-        let (deserialized, _) = Activation::deserialize_binary(&serialized);
-        assert_eq!(activation, deserialized);
+        test_serialization!(Activation::ReLU, Activation);
+        test_serialization!(Activation::Sigmoid, Activation);
+        test_serialization!(Activation::Tanh, Activation);
     }
 
     #[test]
@@ -292,9 +288,7 @@ mod test {
             Dense::new(37, 20),
             Activation::Sigmoid,
         ];
-        let serialized = network.serialize_binary();
-        let (deserialized, _) = Network::deserialize_binary(&serialized);
-        assert_eq!(network, deserialized);
+        test_serialization!(network, Network);
     }
 
     #[test]
