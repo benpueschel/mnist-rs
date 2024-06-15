@@ -3,9 +3,11 @@ extern crate proc_macro;
 mod util;
 mod serialize_enum;
 mod serialize_struct;
+mod serialize_union;
 
 use serialize_enum::derive_enum_serialization;
 use serialize_struct::derive_struct_serialization;
+use serialize_union::derive_union_serialization;
 
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, Data, DeriveInput};
@@ -19,7 +21,7 @@ pub fn derive_deserialize_layer(input: TokenStream) -> TokenStream {
     let expanded = match input.data {
         Data::Struct(data) => derive_struct_serialization(data, name, generics),
         Data::Enum(data) => derive_enum_serialization(data, name, generics),
-        _ => panic!("#[derive(Serialize)] can not be used on this type"),
+        Data::Union(data) => derive_union_serialization(data, name, generics)
     };
 
     /*

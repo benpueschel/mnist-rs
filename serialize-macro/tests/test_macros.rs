@@ -4,6 +4,34 @@ use serialize_macro::Serialize;
 use serialization::{test_serialization, Serialized};
 
 #[test]
+fn test_serialize_union() {
+    #[derive(Debug, PartialEq, Serialize)]
+    pub struct TestUnion;
+    let test = TestUnion;
+    test_serialization!(test, TestUnion);
+}
+
+#[test]
+fn test_serialize_tuple_struct() {
+    #[derive(Debug, PartialEq, Serialize)]
+    pub struct TestTupleStruct(usize, f32, String);
+    let test = TestTupleStruct(42, PI, "Hello, World!".to_string());
+    test_serialization!(test, TestTupleStruct);
+}
+
+#[test]
+fn test_serialize_struct() {
+    #[derive(Debug, PartialEq, Serialize)]
+    pub struct TestStruct {
+        x: usize,
+        y: f32,
+        z: String
+    }
+    let test = TestStruct { x: 42, y: PI, z: "Hello, World!".to_string() };
+    test_serialization!(test, TestStruct);
+}
+
+#[test]
 fn test_serialize_enum_tuple() {
     #[derive(Debug, PartialEq, Serialize)]
     pub enum TestEnumTuple {
@@ -34,4 +62,3 @@ fn test_serialize_enum_struct() {
     test_serialization!(two, TestEnumStruct);
     test_serialization!(three, TestEnumStruct);
 }
-

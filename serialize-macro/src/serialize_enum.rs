@@ -1,6 +1,8 @@
-use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, ToTokens, TokenStreamExt};
-use syn::{DataEnum, Field, Fields, Generics, Ident, Path, Variant};
+use std::vec;
+
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
+use syn::{DataEnum, Field, Fields, Generics, Ident, Variant};
 
 pub fn derive_enum_serialization(
     data: DataEnum,
@@ -27,12 +29,7 @@ pub fn derive_enum_serialization(
             }
 
             fn deserialize_binary(data: &[u8]) -> (Self, usize) {
-                // tag format: len(u64) -> tag data ([u8])
-                let tag = {
-                    let len = u64::from_be_bytes([data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]]) as usize;
-                    String::from_utf8(data[8..8 + len].to_vec()).unwrap()
-                };
-                let mut offset = tag.len() + 8;
+                let (tag, mut offset) = String::deserialize_binary(&data[0..]);
                 (
                     match tag.as_str() {
                         #(#deserialize_code)*
@@ -59,7 +56,7 @@ fn variant_name_str(name: &Ident, variant: &Variant) -> String {
 }
 
 fn derive_variant_serialize_code(name: &Ident, variant: &Variant) -> TokenStream {
-    let (serialize_code, _) = derive_field_serialization(&variant.fields);
+    let serialize_code = derive_serialize_field(&variant.fields);
     let tag = variant_name(name, variant);
 
     let enum_pattern = if variant.fields.is_empty() {
@@ -76,16 +73,15 @@ fn derive_variant_serialize_code(name: &Ident, variant: &Variant) -> TokenStream
     let tag_str = variant_name_str(name, variant);
     quote! {
         #enum_pattern => {
-            let tag = #tag_str.as_bytes();
-            data.extend((tag.len() as u64).to_be_bytes());
-            data.extend(tag);
+            let tag = String::from(#tag_str);
+            data.extend(tag.serialize_binary());
             #(#serialize_code)*
         }
     }
 }
 
 fn derive_variant_deserialize_code(name: &Ident, variant: &Variant) -> TokenStream {
-    let (_, deserialize_code) = derive_field_serialization(&variant.fields);
+    let deserialize_code = derive_deserialize_field(&variant.fields);
     let tag = variant_name(name, variant);
     let tag_str = variant_name_str(name, variant);
 
@@ -118,19 +114,41 @@ fn get_field_name(args: (usize, &Field)) -> TokenStream {
     }
 }
 
-type FieldSerialization = (Vec<TokenStream>, Vec<TokenStream>);
-fn derive_field_serialization(fields: &Fields) -> FieldSerialization {
+fn derive_serialize_field(fields: &Fields) -> Vec<TokenStream> {
     match fields {
-        Fields::Named(fields) => {
-            let serialize_fields = fields.named.iter().map(|f| {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .map(|f| {
                 let field_name = &f.ident;
                 quote! {
                     let mut serialized = #field_name.serialize_binary();
                     data.extend_from_slice(&serialized);
                 }
-            });
+            })
+            .collect::<Vec<_>>(),
+        Fields::Unnamed(fields) => fields
+            .unnamed
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let name = get_field_name((i, f));
+                quote! {
+                    let mut serialized = #name.serialize_binary();
+                    data.extend_from_slice(&serialized);
+                }
+            })
+            .collect::<Vec<_>>(),
+        Fields::Unit => vec![],
+    }
+}
 
-            let deserialize_fields = fields.named.iter().map(|f| {
+fn derive_deserialize_field(fields: &Fields) -> Vec<TokenStream> {
+    match fields {
+        Fields::Named(fields) => fields
+            .named
+            .iter()
+            .map(|f| {
                 let field_name = &f.ident;
                 let field_type = &f.ty;
                 quote! {
@@ -140,23 +158,12 @@ fn derive_field_serialization(fields: &Fields) -> FieldSerialization {
                         field
                     }
                 }
-            });
-
-            (
-                serialize_fields.collect::<Vec<_>>(),
-                deserialize_fields.collect::<Vec<_>>(),
-            )
-        }
-        Fields::Unnamed(fields) => {
-            let serialize_fields = fields.unnamed.iter().enumerate().map(|(i, f)| {
-                let name = get_field_name((i, f));
-                quote! {
-                    let mut serialized = #name.serialize_binary();
-                    data.extend_from_slice(&serialized);
-                }
-            });
-
-            let deserialize_fields = fields.unnamed.iter().map(|f| {
+            })
+            .collect::<Vec<_>>(),
+        Fields::Unnamed(fields) => fields
+            .unnamed
+            .iter()
+            .map(|f| {
                 let field_type = &f.ty;
                 quote! {
                     {
@@ -165,13 +172,8 @@ fn derive_field_serialization(fields: &Fields) -> FieldSerialization {
                         field
                     }
                 }
-            });
-
-            (
-                serialize_fields.collect::<Vec<_>>(),
-                deserialize_fields.collect::<Vec<_>>(),
-            )
-        }
-        Fields::Unit => (vec![], vec![]),
+            })
+            .collect::<Vec<_>>(),
+        Fields::Unit => vec![],
     }
 }
