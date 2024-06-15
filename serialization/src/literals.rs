@@ -15,7 +15,7 @@ pub fn i64_from_bytes(bytes: &[u8]) -> i64 {
     i64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }
 
-impl<'a> Serialized for String {
+impl Serialized for String {
     fn serialize_binary(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(self.len() + 8);
         data.extend(self.len().serialize_binary());
