@@ -25,7 +25,7 @@ impl<'a> Serialized for String {
 
     fn deserialize_binary(data: &[u8]) -> (Self, usize) {
         let len = usize::deserialize_binary(&data[0..]).0;
-        (Self::from_utf8(data[8..].to_vec()).unwrap(), len + 8)
+        (Self::from_utf8(data[8..8+len].to_vec()).unwrap(), len + 8)
     }
 
     fn tag() -> &'static str {
@@ -205,7 +205,12 @@ impl Serialized for isize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_random_value;
+    use crate::{test_random_value, test_serialization};
+
+    #[test]
+    fn test_deserialize_string() {
+        test_serialization!(String::from("Hello, World!"), String);
+    }
 
     test_random_value!(test_deserialize_usize, usize);
     test_random_value!(test_deserialize_u64, u64);
