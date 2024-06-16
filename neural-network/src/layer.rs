@@ -31,7 +31,7 @@ impl PartialEq for dyn Layer {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum Activation {
     Sigmoid,
     ReLU,
@@ -43,7 +43,7 @@ pub struct Dense {
     pub weights: Matrix,
     pub biases: Vector,
 }
-
+/*
 impl Serialized for Activation {
     fn serialize_binary(&self) -> Vec<u8> {
         match self {
@@ -70,6 +70,7 @@ impl Serialized for Activation {
         "Activation"
     }
 }
+*/
 
 impl LayerName for Activation {
     fn name(&self) -> String {
